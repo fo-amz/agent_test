@@ -34,6 +34,7 @@ class ChatApp {
         this.adjustTextareaHeight();
         this.checkServerStatus();
         this.initVoiceToggle();
+        this.checkApiHealth();
     }
 
     async checkServerStatus() {
@@ -105,6 +106,33 @@ class ChatApp {
                 e.preventDefault();
                 this.stopRecording();
             });
+        }
+    }
+
+    /**
+     * Check if the backend API is available
+     */
+    async checkApiHealth() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/health`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.llm_client_initialized) {
+                    console.log('Backend API is healthy and LLM client is initialized');
+                } else {
+                    console.warn('Backend API is running but LLM client is not initialized');
+                }
+            } else {
+                console.warn('Backend API health check failed');
+            }
+        } catch (error) {
+            console.warn('Backend API is not available:', error.message);
         }
     }
 
@@ -246,7 +274,7 @@ class ChatApp {
             this.messageHistory.push({ role: 'assistant', content: text });
         } catch (error) {
             this.hideTypingIndicator();
-            this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+            this.addMessage(error.message || 'Sorry, I encountered an error. Please try again.', 'assistant');
         }
     }
 
@@ -446,6 +474,42 @@ class ChatApp {
         // Select random response from category
         const categoryResponses = responses[category];
         return categoryResponses[Math.floor(Math.random() * categoryResponses.length)];
+    }
+
+    /**
+     * Clear conversation history on both frontend and backend
+     */
+    async clearConversation() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/chat/clear`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                this.messageHistory = [];
+                this.chatMessages.innerHTML = `
+                    <div class="welcome-message">
+                        <div class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+                            </svg>
+                        </div>
+                        <h2>Welcome!</h2>
+                        <p>I'm your personal assistant. How can I help you today?</p>
+                    </div>
+                `;
+                console.log('Conversation history cleared');
+            } else {
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to clear conversation history');
+            }
+        } catch (error) {
+            console.error('Error clearing conversation:', error.message);
+            throw error;
+        }
     }
 }
 
