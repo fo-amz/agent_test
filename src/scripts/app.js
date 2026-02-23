@@ -1,6 +1,6 @@
 /**
  * Personal Assistant Chat Application
- * Main JavaScript file handling chat functionality
+ * Main JavaScript file handling chat functionality with voice support
  */
 
 class ChatApp {
@@ -9,8 +9,22 @@ class ChatApp {
         this.chatContainer = document.getElementById('chatContainer');
         this.messageInput = document.getElementById('messageInput');
         this.sendButton = document.getElementById('sendButton');
+        this.micButton = document.getElementById('micButton');
+        this.recordingIndicator = document.getElementById('recordingIndicator');
+        this.recordingTime = document.getElementById('recordingTime');
+        this.voiceResponseToggle = document.getElementById('voiceResponseToggle');
+        this.statusText = document.getElementById('statusText');
+        
         this.isTyping = false;
         this.messageHistory = [];
+        this.isRecording = false;
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.recordingTimer = null;
+        this.recordingSeconds = 0;
+        this.voiceResponseEnabled = true;
+        this.apiBaseUrl = '';
+        this.features = { speech_to_text: false, text_to_speech: false };
         
         this.init();
     }
@@ -18,6 +32,43 @@ class ChatApp {
     init() {
         this.bindEvents();
         this.adjustTextareaHeight();
+        this.checkServerStatus();
+        this.initVoiceToggle();
+    }
+
+    async checkServerStatus() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/status`);
+            if (response.ok) {
+                const data = await response.json();
+                this.features = data.features;
+                this.statusText.textContent = 'Online';
+                this.updateVoiceUI();
+            }
+        } catch (error) {
+            this.statusText.textContent = 'Demo Mode';
+            this.features = { speech_to_text: false, text_to_speech: false };
+            this.updateVoiceUI();
+        }
+    }
+
+    updateVoiceUI() {
+        if (this.micButton) {
+            this.micButton.style.display = this.features.speech_to_text ? 'flex' : 'none';
+        }
+        if (this.voiceResponseToggle) {
+            this.voiceResponseToggle.style.display = this.features.text_to_speech ? 'flex' : 'none';
+            this.voiceResponseToggle.classList.toggle('active', this.voiceResponseEnabled);
+        }
+    }
+
+    initVoiceToggle() {
+        if (this.voiceResponseToggle) {
+            this.voiceResponseToggle.addEventListener('click', () => {
+                this.voiceResponseEnabled = !this.voiceResponseEnabled;
+                this.voiceResponseToggle.classList.toggle('active', this.voiceResponseEnabled);
+            });
+        }
     }
 
     bindEvents() {
@@ -35,10 +86,26 @@ class ChatApp {
             }
         });
 
-        // Handle paste events for textarea auto-resize
         this.messageInput.addEventListener('paste', () => {
             setTimeout(() => this.adjustTextareaHeight(), 0);
         });
+
+        // Microphone button events
+        if (this.micButton) {
+            this.micButton.addEventListener('mousedown', () => this.startRecording());
+            this.micButton.addEventListener('mouseup', () => this.stopRecording());
+            this.micButton.addEventListener('mouseleave', () => {
+                if (this.isRecording) this.stopRecording();
+            });
+            this.micButton.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                this.startRecording();
+            });
+            this.micButton.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                this.stopRecording();
+            });
+        }
     }
 
     adjustTextareaHeight() {
@@ -52,31 +119,131 @@ class ChatApp {
         this.sendButton.disabled = !hasContent;
     }
 
+    async startRecording() {
+        if (this.isRecording || !this.features.speech_to_text) return;
+        
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            this.mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            this.audioChunks = [];
+            
+            this.mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) this.audioChunks.push(e.data);
+            };
+            
+            this.mediaRecorder.onstop = () => this.processRecording();
+            
+            this.mediaRecorder.start();
+            this.isRecording = true;
+            this.updateRecordingUI(true);
+            this.startRecordingTimer();
+        } catch (error) {
+            console.error('Microphone access denied:', error);
+            alert('Please allow microphone access to use voice input.');
+        }
+    }
+
+    stopRecording() {
+        if (!this.isRecording || !this.mediaRecorder) return;
+        
+        this.mediaRecorder.stop();
+        this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        this.isRecording = false;
+        this.updateRecordingUI(false);
+        this.stopRecordingTimer();
+    }
+
+    updateRecordingUI(isRecording) {
+        if (this.recordingIndicator) {
+            this.recordingIndicator.style.display = isRecording ? 'flex' : 'none';
+        }
+        if (this.micButton) {
+            this.micButton.classList.toggle('recording', isRecording);
+            const micIcon = this.micButton.querySelector('.mic-icon');
+            const stopIcon = this.micButton.querySelector('.stop-icon');
+            if (micIcon) micIcon.style.display = isRecording ? 'none' : 'block';
+            if (stopIcon) stopIcon.style.display = isRecording ? 'block' : 'none';
+        }
+        this.messageInput.style.display = isRecording ? 'none' : 'block';
+    }
+
+    startRecordingTimer() {
+        this.recordingSeconds = 0;
+        this.updateRecordingTime();
+        this.recordingTimer = setInterval(() => {
+            this.recordingSeconds++;
+            this.updateRecordingTime();
+        }, 1000);
+    }
+
+    stopRecordingTimer() {
+        if (this.recordingTimer) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
+        }
+    }
+
+    updateRecordingTime() {
+        if (this.recordingTime) {
+            const mins = Math.floor(this.recordingSeconds / 60);
+            const secs = this.recordingSeconds % 60;
+            this.recordingTime.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+    }
+
+    async processRecording() {
+        if (this.audioChunks.length === 0) return;
+        
+        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+        this.removeWelcomeMessage();
+        this.addMessage('🎤 Voice message', 'user');
+        this.showTypingIndicator();
+        
+        try {
+            const response = await this.sendVoiceMessage(audioBlob);
+            this.hideTypingIndicator();
+            this.addMessage(response.text, 'assistant', response.audio_url);
+            this.messageHistory.push({ role: 'assistant', content: response.text });
+        } catch (error) {
+            this.hideTypingIndicator();
+            this.addMessage('Sorry, I could not process your voice message.', 'assistant');
+        }
+    }
+
+    async sendVoiceMessage(audioBlob) {
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+        formData.append('generate_audio', this.voiceResponseEnabled);
+        
+        const response = await fetch(`${this.apiBaseUrl}/api/chat/voice`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) throw new Error('Voice chat failed');
+        return response.json();
+    }
+
     async sendMessage() {
         const message = this.messageInput.value.trim();
         if (!message || this.isTyping) return;
 
-        // Remove welcome message if it exists
         this.removeWelcomeMessage();
-
-        // Add user message
         this.addMessage(message, 'user');
         this.messageHistory.push({ role: 'user', content: message });
 
-        // Clear input
         this.messageInput.value = '';
         this.adjustTextareaHeight();
         this.toggleSendButton();
-
-        // Show typing indicator
         this.showTypingIndicator();
 
-        // Simulate backend response (mock functionality)
         try {
             const response = await this.getAssistantResponse(message);
             this.hideTypingIndicator();
-            this.addMessage(response, 'assistant');
-            this.messageHistory.push({ role: 'assistant', content: response });
+            const audioUrl = response.audio_url || null;
+            const text = response.text || response;
+            this.addMessage(text, 'assistant', audioUrl);
+            this.messageHistory.push({ role: 'assistant', content: text });
         } catch (error) {
             this.hideTypingIndicator();
             this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
@@ -90,7 +257,7 @@ class ChatApp {
         }
     }
 
-    addMessage(content, type) {
+    addMessage(content, type, audioUrl = null) {
         const messageElement = document.createElement('div');
         messageElement.className = `message ${type}`;
         
@@ -99,6 +266,15 @@ class ChatApp {
             : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>';
 
         const timestamp = this.formatTime(new Date());
+        let audioHtml = '';
+        
+        if (audioUrl && type === 'assistant') {
+            audioHtml = `
+                <div class="audio-player">
+                    <audio controls src="${this.apiBaseUrl}${audioUrl}"></audio>
+                </div>
+            `;
+        }
 
         messageElement.innerHTML = `
             <div class="message-avatar">
@@ -106,12 +282,19 @@ class ChatApp {
             </div>
             <div class="message-content">
                 <div class="message-bubble">${this.escapeHtml(content)}</div>
+                ${audioHtml}
                 <span class="message-time">${timestamp}</span>
             </div>
         `;
 
         this.chatMessages.appendChild(messageElement);
         this.scrollToBottom();
+        
+        // Auto-play audio if enabled
+        if (audioUrl && this.voiceResponseEnabled) {
+            const audio = messageElement.querySelector('audio');
+            if (audio) audio.play().catch(() => {});
+        }
     }
 
     showTypingIndicator() {
@@ -165,15 +348,41 @@ class ChatApp {
     }
 
     /**
-     * Mock backend integration - simulates assistant responses
-     * Replace this method with actual API calls when backend is ready
+     * Get assistant response - uses real API if available, falls back to mock
      */
     async getAssistantResponse(userMessage) {
-        // Simulate network delay (1-3 seconds)
-        const delay = Math.random() * 2000 + 1000;
-        await new Promise(resolve => setTimeout(resolve, delay));
+        // Try real API first
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/chat`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: userMessage,
+                    generate_audio: this.voiceResponseEnabled && this.features.text_to_speech
+                })
+            });
+            
+            if (response.ok) {
+                return await response.json();
+            }
+        } catch (error) {
+            console.log('API not available, using mock responses');
+        }
+        
+        // Fallback to mock response
+        return this.getMockResponse(userMessage);
+    }
 
-        // Mock responses based on user input
+    getMockResponse(userMessage) {
+        const delay = Math.random() * 2000 + 1000;
+        return new Promise(resolve => {
+            setTimeout(() => {
+                resolve({ text: this.generateMockText(userMessage), audio_url: null });
+            }, delay);
+        });
+    }
+
+    generateMockText(userMessage) {
         const lowerMessage = userMessage.toLowerCase();
         
         const responses = {
