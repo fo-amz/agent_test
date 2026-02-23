@@ -1,8 +1,91 @@
-# Personal Assistant Agent
+# Personal Assistant
 
-A minimal personal assistant agent built using the pi agent framework architecture. This agent interacts with an LLM (Claude/Anthropic) and provides tools for file operations and command execution.
+A personal assistant application with a modern chat web interface and an AI-powered agent backend built using the pi agent framework architecture.
 
-## Features
+## Overview
+
+This project consists of two main components:
+
+1. **Chat Web Interface** - A responsive, modern frontend for interacting with the assistant
+2. **Agent Backend** - An LLM-powered agent (Claude/Anthropic) with tools for file operations and command execution
+
+---
+
+## Chat Web Interface
+
+### Features
+
+- **Chat Message Display**: Conversation history with distinct styling for user messages and assistant responses
+- **Text Input**: Input field with send button for message submission
+- **Loading States**: Visual typing indicator showing when the assistant is processing
+- **Auto-Scroll**: Automatically scrolls to show the most recent messages
+- **Responsive Design**: Mobile-friendly interface that works across different screen sizes
+- **Dark Mode**: Automatic dark mode support based on system preferences
+- **Mock Responses**: Simulated assistant responses for testing (backend placeholder)
+
+### Frontend Project Structure
+
+```
+src/
+├── index.html          # Main HTML entry point
+├── styles/
+│   └── main.css        # All styling including responsive breakpoints
+├── scripts/
+│   └── app.js          # Chat functionality and mock backend
+└── assets/             # Static assets (images, icons)
+```
+
+### Running the Frontend Locally
+
+1. Open `src/index.html` in a web browser, or
+2. Use a local development server:
+   ```bash
+   # Using Python
+   cd src && python -m http.server 8000
+
+   # Using Node.js (npx)
+   npx serve src
+   ```
+3. Navigate to `http://localhost:8000`
+
+### Backend Integration
+
+The chat interface includes mock functionality that simulates assistant responses. To integrate with the real backend:
+
+1. Locate the `getAssistantResponse` method in `src/scripts/app.js`
+2. Replace the mock implementation with actual API calls:
+
+```javascript
+async getAssistantResponse(userMessage) {
+    const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            message: userMessage,
+            history: this.messageHistory
+        })
+    });
+    
+    const data = await response.json();
+    return data.response;
+}
+```
+
+### Browser Support
+
+- Chrome (latest)
+- Firefox (latest)
+- Safari (latest)
+- Edge (latest)
+- Mobile browsers (iOS Safari, Chrome for Android)
+
+---
+
+## Agent Backend
+
+### Features
 
 - **Interactive Agent Loop**: Chat with the assistant in a conversational manner
 - **File Operations**: Read, Write, and Edit files
@@ -10,7 +93,7 @@ A minimal personal assistant agent built using the pi agent framework architectu
 - **Tool Registry**: Extensible architecture for adding new tools
 - **Conversation History**: Maintains context across multiple interactions
 
-## Architecture
+### Backend Architecture
 
 ```
 agent_test/
@@ -35,12 +118,12 @@ agent_test/
 └── README.md              # This file
 ```
 
-## Prerequisites
+### Prerequisites
 
 - Python 3.10 or higher
 - An Anthropic API key
 
-## Setup
+### Setup
 
 1. **Clone the repository** (if not already done):
    ```bash
@@ -70,7 +153,7 @@ agent_test/
    export ANTHROPIC_API_KEY=your_api_key_here
    ```
 
-## Configuration Options
+### Configuration Options
 
 The following environment variables can be configured in your `.env` file:
 
@@ -81,7 +164,7 @@ The following environment variables can be configured in your `.env` file:
 | `MAX_TOKENS` | Maximum tokens in response | `4096` |
 | `TEMPERATURE` | Response creativity (0-1) | `0.7` |
 
-## Running the Agent
+### Running the Agent
 
 ```bash
 python main.py
