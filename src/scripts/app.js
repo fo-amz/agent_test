@@ -11,6 +11,7 @@ class ChatApp {
         this.sendButton = document.getElementById('sendButton');
         this.isTyping = false;
         this.messageHistory = [];
+        this.apiBaseUrl = 'http://localhost:5000';
         
         this.init();
     }
@@ -18,6 +19,7 @@ class ChatApp {
     init() {
         this.bindEvents();
         this.adjustTextareaHeight();
+        this.checkApiHealth();
     }
 
     bindEvents() {
@@ -39,6 +41,33 @@ class ChatApp {
         this.messageInput.addEventListener('paste', () => {
             setTimeout(() => this.adjustTextareaHeight(), 0);
         });
+    }
+
+    /**
+     * Check if the backend API is available
+     */
+    async checkApiHealth() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/health`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.llm_client_initialized) {
+                    console.log('Backend API is healthy and LLM client is initialized');
+                } else {
+                    console.warn('Backend API is running but LLM client is not initialized');
+                }
+            } else {
+                console.warn('Backend API health check failed');
+            }
+        } catch (error) {
+            console.warn('Backend API is not available:', error.message);
+        }
     }
 
     adjustTextareaHeight() {
@@ -71,7 +100,7 @@ class ChatApp {
         // Show typing indicator
         this.showTypingIndicator();
 
-        // Simulate backend response (mock functionality)
+        // Call backend API
         try {
             const response = await this.getAssistantResponse(message);
             this.hideTypingIndicator();
@@ -79,7 +108,7 @@ class ChatApp {
             this.messageHistory.push({ role: 'assistant', content: response });
         } catch (error) {
             this.hideTypingIndicator();
-            this.addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+            this.addMessage(error.message || 'Sorry, I encountered an error. Please try again.', 'assistant');
         }
     }
 
@@ -165,78 +194,75 @@ class ChatApp {
     }
 
     /**
-     * Mock backend integration - simulates assistant responses
-     * Replace this method with actual API calls when backend is ready
+     * Send message to backend API and get assistant response
+     * @param {string} userMessage - The user's message
+     * @returns {Promise<string>} - The assistant's response
      */
     async getAssistantResponse(userMessage) {
-        // Simulate network delay (1-3 seconds)
-        const delay = Math.random() * 2000 + 1000;
-        await new Promise(resolve => setTimeout(resolve, delay));
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/chat`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: userMessage
+                }),
+            });
 
-        // Mock responses based on user input
-        const lowerMessage = userMessage.toLowerCase();
-        
-        const responses = {
-            greeting: [
-                "Hello! How can I assist you today?",
-                "Hi there! I'm here to help. What can I do for you?",
-                "Greetings! What would you like to know?"
-            ],
-            help: [
-                "I'm your personal assistant and I can help you with various tasks. You can ask me questions, get information, or just have a conversation. What would you like to explore?",
-                "I'm here to assist you! Feel free to ask me anything - I can help with information, answer questions, or provide guidance on various topics."
-            ],
-            thanks: [
-                "You're welcome! Is there anything else I can help you with?",
-                "Happy to help! Let me know if you need anything else.",
-                "My pleasure! Feel free to ask if you have more questions."
-            ],
-            weather: [
-                "I don't have access to real-time weather data yet, but once I'm connected to a weather service, I'll be able to give you accurate forecasts. Is there anything else I can help with?",
-                "Weather information isn't available in my current setup, but this feature will be added soon. What else can I assist you with?"
-            ],
-            time: [
-                `Based on your device, the current time appears to be ${new Date().toLocaleTimeString()}. Is there anything else you'd like to know?`,
-                `It looks like it's ${new Date().toLocaleTimeString()} according to your system. How else can I help?`
-            ],
-            name: [
-                "I'm your Personal Assistant, designed to help you with various tasks and questions. You can call me PA if you'd like!",
-                "I go by Personal Assistant. I'm here to make your life easier by answering questions and helping with tasks."
-            ],
-            capabilities: [
-                "I'm a chat interface designed to assist you with various queries. Currently, I'm running in demo mode with simulated responses. Once connected to a backend, I'll be able to provide much more comprehensive assistance!",
-                "Right now, I'm demonstrating the chat interface capabilities. In the full version, I'll be able to help with a wide range of tasks, from answering questions to providing personalized recommendations."
-            ],
-            default: [
-                "That's an interesting question! Once I'm fully connected to the backend services, I'll be able to provide more detailed and accurate responses. Is there anything specific I can help clarify?",
-                "I appreciate your message. In the full implementation, I'll have access to more resources to give you comprehensive answers. What else would you like to explore?",
-                "Thanks for reaching out! While I'm currently in demo mode, I'm designed to handle a wide variety of questions and tasks. Feel free to ask anything!",
-                "I'm here to help! Although I'm running with simulated responses right now, the full version will provide much more detailed assistance. What else can I do for you?"
-            ]
-        };
+            const data = await response.json();
 
-        // Determine response category
-        let category = 'default';
-        
-        if (/^(hi|hello|hey|greetings|good\s*(morning|afternoon|evening))/.test(lowerMessage)) {
-            category = 'greeting';
-        } else if (/help|assist|what can you do|how do you work/.test(lowerMessage)) {
-            category = 'help';
-        } else if (/thank|thanks|appreciate/.test(lowerMessage)) {
-            category = 'thanks';
-        } else if (/weather|forecast|temperature|rain|sunny|cloudy/.test(lowerMessage)) {
-            category = 'weather';
-        } else if (/time|what.*time|current.*time/.test(lowerMessage)) {
-            category = 'time';
-        } else if (/your name|who are you|what are you/.test(lowerMessage)) {
-            category = 'name';
-        } else if (/what can you|capabilities|features|abilities/.test(lowerMessage)) {
-            category = 'capabilities';
+            if (!response.ok) {
+                throw new Error(data.error || `Server error: ${response.status}`);
+            }
+
+            if (data.error) {
+                throw new Error(data.error);
+            }
+
+            return data.response;
+        } catch (error) {
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                throw new Error('Unable to connect to the server. Please make sure the backend is running.');
+            }
+            throw error;
         }
+    }
 
-        // Select random response from category
-        const categoryResponses = responses[category];
-        return categoryResponses[Math.floor(Math.random() * categoryResponses.length)];
+    /**
+     * Clear conversation history on both frontend and backend
+     */
+    async clearConversation() {
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/api/chat/clear`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (response.ok) {
+                this.messageHistory = [];
+                this.chatMessages.innerHTML = `
+                    <div class="welcome-message">
+                        <div class="welcome-icon">
+                            <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+                            </svg>
+                        </div>
+                        <h2>Welcome!</h2>
+                        <p>I'm your personal assistant. How can I help you today?</p>
+                    </div>
+                `;
+                console.log('Conversation history cleared');
+            } else {
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to clear conversation history');
+            }
+        } catch (error) {
+            console.error('Error clearing conversation:', error.message);
+            throw error;
+        }
     }
 }
 
